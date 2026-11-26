@@ -24,20 +24,75 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
+      - name: Build & sign APK directly with Android SDK tools
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          BUILD_TOOLS=$(ls -d "$SDK"/build-tools/* | sort -V | tail -n 1)
+          PLATFORM_JAR=$(ls "$SDK"/platforms/android-*/android.jar | sort -V | tail -n 1)
+          echo "Using build-tools: $BUILD_TOOLS"
+          echo "Using platform:    $PLATFORM_JAR"
 
-      - name: Build Debug & Release APK
-        working-directory: app-android
-        run: gradle assembleDebug assembleRelease --no-daemon
+          OUT="app-android/dist"
+          WORK="$OUT/work"
+          rm -rf "$OUT"
+          mkdir -p "$WORK/res" "$WORK/gen" "$WORK/classes" "$WORK/dex"
+
+          # 1. Compile XML resources
+          "$BUILD_TOOLS/aapt2" compile --dir app-android/app/src/main/res -o "$WORK/res.zip"
+
+          # 2. Link resources & generate R.java
+          "$BUILD_TOOLS/aapt2" link \
+            -I "$PLATFORM_JAR" \
+            --manifest app-android/app/src/main/AndroidManifest.xml \
+            --java "$WORK/gen" \
+            --min-sdk-version 26 \
+            --target-sdk-version 33 \
+            --version-code 1 \
+            --version-name "1.0.0" \
+            -o "$WORK/unaligned.apk" \
+            "$WORK/res.zip"
+
+          # 3. Compile Java sources
+          find "$WORK/gen" app-android/app/src/main/java -name "*.java" > "$WORK/sources.txt"
+          javac --release 11 -encoding UTF-8 -cp "$PLATFORM_JAR" -d "$WORK/classes" @"$WORK/sources.txt"
+
+          # 4. Convert .class -> classes.dex
+          "$BUILD_TOOLS/d8" \
+            --min-api 26 \
+            --lib "$PLATFORM_JAR" \
+            --output "$WORK/dex" \
+            $(find "$WORK/classes" -name "*.class")
+
+          # 5. Package classes.dex into APK
+          (cd "$WORK/dex" && zip -q "../unaligned.apk" classes.dex)
+
+          # 6. Align APK
+          "$BUILD_TOOLS/zipalign" -f -p 4 "$WORK/unaligned.apk" "$WORK/aligned.apk"
+
+          # 7. Sign APK
+          keytool -genkeypair -v \
+            -keystore "$WORK/release.jks" \
+            -storepass android123 -keypass android123 \
+            -alias phonelab -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=PhoneLab,OU=Dev,O=PhoneLab,L=CN,S=CN,C=CN" >/dev/null 2>&1
+
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$WORK/release.jks" \
+            --ks-pass pass:android123 \
+            --key-pass pass:android123 \
+            --ks-key-alias phonelab \
+            --out "$OUT/phone-mini-server.apk" \
+            "$WORK/aligned.apk"
+
+          "$BUILD_TOOLS/apksigner" verify "$OUT/phone-mini-server.apk"
+          ls -lh "$OUT/phone-mini-server.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: phone-mini-server-apk
-          path: app-android/app/build/outputs/apk/release/app-release.apk
+          path: app-android/dist/phone-mini-server.apk
 
       - name: Publish latest APK to GitHub Releases
         uses: softprops/action-gh-release@v2
@@ -45,10 +100,10 @@ jobs:
           tag_name: app-latest
           name: "Phone Mini-Server Companion App (Latest)"
           body: |
-            原生安卓配套伴侣 App（纯 Android SDK、零第三方依赖）：
+            原生安卓配套伴侣 App（纯 Android SDK 原生编译、零第三方依赖）：
             - 一键开启 / 关闭 / 重启 Ubuntu 小主机（Root 调用 `/data/local/linux/linux.sh`）
             - 一键开关开机自启、查看当前局域网 IP 与电池状态
             - 内置 WebView 直达 `:8888` 控制台、`:8080` 轻网盘、`:7681` 网页终端
           files: |
-            app-android/app/build/outputs/apk/release/app-release.apk
+            app-android/dist/phone-mini-server.apk
           make_latest: true
