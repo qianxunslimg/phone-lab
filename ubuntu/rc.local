@@ -1,0 +1,31 @@
+#!/bin/bash
+# Ubuntu-side startup script executed by /data/local/linux/linux.sh
+# Deployed to: /etc/rc.local
+
+set -u
+
+LOG_DIR="/var/log/phone-server"
+AUTH_FILE="/etc/phone-server-auth"
+AUTH=$(cat "$AUTH_FILE" 2>/dev/null || true)
+LOGIN_USER="${AUTH%%:*}"
+LOGIN_USER="${LOGIN_USER:-root}"
+
+mkdir -p "$LOG_DIR"
+
+start_if_stopped() {
+  local pattern="$1"
+  local logfile="$2"
+  shift 2
+  if ! pgrep -f "$pattern" >/dev/null 2>&1; then
+    nohup "$@" </dev/null >>"$logfile" 2>&1 &
+  fi
+}
+
+start_if_stopped "/opt/phone-dashboard/server.py" "$LOG_DIR/dashboard.log" \
+  python3 /opt/phone-dashboard/server.py
+
+start_if_stopped "/usr/local/bin/filebrowser" "$LOG_DIR/filebrowser.log" \
+  /usr/local/bin/filebrowser -d /etc/filebrowser/filebrowser.db
+
+start_if_stopped "/usr/local/bin/ttyd" "$LOG_DIR/ttyd.log" \
+  /usr/local/bin/ttyd -W -p 7681 -c "$AUTH" -t fontSize=15 su - "$LOGIN_USER"

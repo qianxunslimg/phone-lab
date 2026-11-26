@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#090e1a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="小主机" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icon.png" />
+  <link rel="shortcut icon" href="/icon.png" type="image/png" />
+  <link rel="stylesheet" href="/style.css" />
+  <title>小主机控制台 · Phone Mini-Server</title>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="/icon.svg" alt="Phone Mini-Server" />
+      <div>
+        <h1>小主机控制台 <span class="live-badge" id="live-dot">● 在线</span></h1>
+        <p id="meta">正在连接小主机...</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <nav class="nav-tabs" aria-label="页面切换">
+        <button class="tab-btn active" data-tab="overview" type="button">📊 监控总览</button>
+        <button class="tab-btn" data-tab="control" type="button">🎛️ 控制中心</button>
+      </nav>
+      <div class="actions">
+        <a class="btn" id="link-fb" target="_blank" rel="noopener">📁 轻网盘</a>
+        <a class="btn secondary" id="link-tty" target="_blank" rel="noopener">💻 网页终端</a>
+      </div>
+    </div>
+  </header>
+
+  <section class="ssh-bar">
+    <div>🔌 局域网 SSH 直连：<code id="ssh-cmd">ssh &lt;user&gt;@...</code></div>
+    <button class="btn sm secondary" id="btn-copy-ssh" type="button">📋 复制命令</button>
+  </section>
+
+  <!-- ==================== TAB 1: 监控总览 ==================== -->
+  <main id="tab-overview">
+    <section class="grid-kpi">
+      <article class="card kpi">
+        <div class="card-hd">
+          <h2>🔋 电池供电</h2>
+          <span class="tag" id="bypass-tag">--</span>
+        </div>
+        <div class="big-row">
+          <div class="big" id="bat-cap">--%</div>
+          <div class="sub right" id="bat-temp">--°C</div>
+        </div>
+        <div class="bar"><div id="bat-bar" class="ok"></div></div>
+        <div class="sub kpi-foot" id="bat-sub">--</div>
+      </article>
+
+      <article class="card kpi">
+        <div class="card-hd">
+          <h2>⚡ CPU 负载</h2>
+          <span class="tag" id="cpu-temp-tag">--°C</span>
+        </div>
+        <div class="big-row">
+          <div class="big" id="cpu-pct">--%</div>
+          <div class="sub right" id="cpu-load">Load: --</div>
+        </div>
+        <svg class="spark" id="spark-cpu" viewBox="0 0 240 42" preserveAspectRatio="none"></svg>
+        <div class="cores kpi-foot" id="cpu-cores"></div>
+      </article>
+
+      <article class="card kpi">
+        <div class="card-hd">
+          <h2>🧠 内存使用</h2>
+          <span class="tag" id="mem-avail-tag">--</span>
+        </div>
+        <div class="big-row">
+          <div class="big" id="mem-pct">--%</div>
+          <div class="sub right" id="mem-used-top">--</div>
+        </div>
+        <svg class="spark" id="spark-mem" viewBox="0 0 240 42" preserveAspectRatio="none"></svg>
+        <div class="sub kpi-foot" id="mem-sub">--</div>
+      </article>
+
+      <article class="card kpi">
+        <div class="card-hd">
+          <h2>🌐 Wi-Fi 流量</h2>
+          <span class="tag" id="net-ip-tag">--</span>
+        </div>
+        <div class="big-row">
+          <div class="big speed" id="net-speed">↓ 0 / ↑ 0</div>
+        </div>
+        <svg class="spark" id="spark-net" viewBox="0 0 240 42" preserveAspectRatio="none"></svg>
+        <div class="sub kpi-foot" id="net-sub">--</div>
+      </article>
+    </section>
+
+    <section class="grid-two">
+      <article class="card">
+        <div class="card-hd">
+          <h2>💾 存储空间</h2>
+          <span class="tag">ext4 + sdcard</span>
+        </div>
+        <div id="disks" class="sub">--</div>
+      </article>
+
+      <article class="card">
+        <div class="card-hd">
+          <h2>🟢 核心服务状态</h2>
+          <span class="tag">开机自启</span>
+        </div>
+        <div class="svc-list" id="services"></div>
+      </article>
+    </section>
+
+    <section class="grid-two">
+      <article class="card">
+        <div class="card-hd">
+          <h2>🔌 监听端口 (TCP)</h2>
+          <span class="tag" id="port-cnt">0 个</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>端口</th><th>监听地址</th><th>进程</th></tr></thead>
+            <tbody id="ports"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-hd">
+          <h2>📊 活跃进程 Top 12</h2>
+          <div class="sort-group">
+            <button class="btn sm secondary active" id="btn-sort-cpu" type="button">按 CPU</button>
+            <button class="btn sm secondary" id="btn-sort-mem" type="button">按内存</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>PID</th><th>进程</th><th class="num">CPU%</th><th class="num">MEM%</th><th class="num">RSS</th></tr></thead>
+            <tbody id="procs"></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <!-- ==================== TAB 2: 控制中心 ==================== -->
+  <main id="tab-control" class="hidden">
+    <section id="auth-gate" class="auth-gate">
+      <article class="card auth-card">
+        <div class="card-hd">
+          <h2>🔐 控制中心身份验证</h2>
+          <span class="tag warn">受保护</span>
+        </div>
+        <p class="sub">修改 ACC 充电策略、硬件直驱供电、启停服务或查看日志前，请验证管理员身份。</p>
+        <form id="auth-form" class="auth-form">
+          <label class="text-field">
+            <span>用户名</span>
+            <input type="text" id="auth-user" placeholder="请输入用户名" autocomplete="username" required />
+          </label>
+          <label class="text-field">
+            <span>密码</span>
+            <input type="password" id="auth-pass" placeholder="请输入管理密码" autocomplete="current-password" required />
+          </label>
+          <div id="auth-err" class="auth-err hidden">用户名或密码错误，请重试</div>
+          <button class="btn" type="submit" style="justify-content:center;">🔓 验证并进入控制中心</button>
+        </form>
+      </article>
+    </section>
+
+    <div id="control-panel" class="hidden">
+      <section class="ctrl-banner">
+        <span>✅ 已通过管理员验证（当前会话有效）</span>
+        <button class="btn sm secondary" id="btn-logout-ctrl" type="button">🔒 锁定退出</button>
+      </section>
+
+      <section class="grid-two">
+        <article class="card">
+          <div class="card-hd">
+            <h2>🔋 ACC 充电保护策略</h2>
+            <span class="tag ok" id="acc-status-tag">加载中</span>
+          </div>
+          <p class="sub">修改后自动写入 ACC 配置，数秒内生效，无需重启手机。</p>
+
+          <div class="preset-row">
+            <button class="btn sm secondary" data-preset="50,60" type="button">极致护电 (50~60%)</button>
+            <button class="btn sm secondary" data-preset="70,75" type="button">默认 (70~75%)</button>
+            <button class="btn sm secondary" data-preset="70,80" type="button">均衡 (70~80%)</button>
+            <button class="btn sm secondary" data-preset="95,100" type="button">临时充满 (95~100%)</button>
+          </div>
+
+          <div class="form-grid">
+            <label class="field">
+              <span>复充电量（低于此值开始充电）：<b id="val-rc">70%</b></span>
+              <input type="range" id="inp-rc" min="20" max="95" value="70" />
+            </label>
+            <label class="field">
+              <span>停充电量（达到此值停充/直驱）：<b id="val-pc">75%</b></span>
+              <input type="range" id="inp-pc" min="30" max="100" value="75" />
+            </label>
+            <label class="field">
+              <span>高温停充阈值：<b id="val-mt">50°C</b></span>
+              <input type="range" id="inp-mt" min="38" max="55" value="50" />
+            </label>
+            <label class="field">
+              <span>降温复充阈值：<b id="val-rt">45°C</b></span>
+              <input type="range" id="inp-rt" min="32" max="50" value="45" />
+            </label>
+          </div>
+
+          <label class="switch-row">
+            <input type="checkbox" id="inp-idle" checked />
+            <span>优先使用硬件直驱供电模式（Battery Idle Mode）</span>
+          </label>
+
+          <div class="ctrl-actions">
+            <button class="btn" id="btn-save-acc" type="button">💾 保存并应用 ACC 策略</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-hd">
+            <h2>⚡ 硬件直驱 &amp; 核心服务控制</h2>
+            <span class="tag" id="ctrl-mtk-tag">--</span>
+          </div>
+
+          <div class="ctrl-block">
+            <h3>联发科硬件直驱即时控制</h3>
+            <p class="sub">直接操作 <code>/proc/mtk_battery_cmd/current_cmd</code>，立即切换主板直通供电不走电池，或恢复正常充电。</p>
+            <div class="ctrl-actions">
+              <button class="btn sm" id="btn-bypass-on" type="button">⚡ 立即直驱停充</button>
+              <button class="btn sm secondary" id="btn-bypass-off" type="button">🔌 恢复正常充电</button>
+            </div>
+          </div>
+
+          <div class="ctrl-block">
+            <h3>核心服务启停与系统缓存</h3>
+            <div class="svc-ctrl-list" id="ctrl-services"></div>
+            <div class="ctrl-actions" style="margin-top:6px;">
+              <button class="btn sm secondary" id="btn-drop-caches" type="button">🧹 清理系统内存缓存</button>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <article class="card">
+        <div class="card-hd">
+          <h2>📜 实时服务日志</h2>
+          <div class="sort-group">
+            <button class="btn sm secondary" data-inline-log="filebrowser" type="button">filebrowser</button>
+            <button class="btn sm secondary" data-inline-log="ttyd" type="button">ttyd</button>
+            <button class="btn sm secondary" data-inline-log="dashboard" type="button">dashboard</button>
+          </div>
+        </div>
+        <pre class="logbox" id="inline-log-content">点击上方按钮加载对应服务日志</pre>
+      </article>
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
