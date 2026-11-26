@@ -45,6 +45,7 @@ jobs:
           "$BUILD_TOOLS/aapt2" link \
             -I "$PLATFORM_JAR" \
             --manifest app-android/app/src/main/AndroidManifest.xml \
+            --rename-manifest-package com.qianxunslimg.miniserver \
             --java "$WORK/gen" \
             --min-sdk-version 26 \
             --target-sdk-version 33 \
