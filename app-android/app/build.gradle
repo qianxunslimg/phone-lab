@@ -1,0 +1,32 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.qianxunslimg.miniserver'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId "com.qianxunslimg.miniserver"
+        minSdk 26
+        targetSdk 33
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // Pure Android SDK: zero external dependencies for fast, tiny APK builds
+}

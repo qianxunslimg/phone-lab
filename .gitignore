@@ -3,3 +3,7 @@ __pycache__/
 *.img
 .DS_Store
 *.log
+app-android/.gradle/
+app-android/build/
+app-android/app/build/
+app-android/local.properties

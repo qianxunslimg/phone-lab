@@ -30,6 +30,7 @@ android-mini-server/
 │   ├── linux-ctl.sh                # 挂载 ext4 镜像、绑定存储与 ACC 目录、启停服务
 │   └── service.d/
 │       └── 99-ubuntu-server.sh     # Magisk 开机自启钩子
+├── app-android/                    # 原生 Android 伴侣 App（零第三方依赖，CI 自动打包 APK）
 ├── ubuntu/                         # Ubuntu 容器侧配置
 │   ├── rc.local                    # 开机拉起 Web 套件
 │   └── zshrc.template              # Oh My Zsh (ys 主题 + 常用插件) 模板
