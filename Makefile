@@ -2,13 +2,15 @@
 PHONE_SSH ?= phone-root
 USER_SSH  ?= phone
 
-.PHONY: help deploy deploy-dashboard deploy-scripts status ssh forward backup
+.PHONY: help deploy deploy-dashboard deploy-scripts status ssh forward backup install-apk install-latest-apk
 
 help:
-	@echo "Phone Mini-Server 管理命令:"
+	@echo "Phone Lab 管理命令:"
 	@echo "  make deploy           部署全部脚本与 Web 控制台并重启仪表盘"
 	@echo "  make deploy-dashboard 仅部署 dashboard/ 并重启 :8888"
 	@echo "  make deploy-scripts   同步 android/ 与 ubuntu/ 运维脚本"
+	@echo "  make install-apk APK=xxx.apk  免 USB 线走 Wi-Fi(SSH+nsenter) 隔空静默安装本地 APK"
+	@echo "  make install-latest-apk       拉取 GitHub Releases 最新伴侣 APK 并无线直装到手机"
 	@echo "  make status           查看手机小主机运行状态"
 	@echo "  make ssh              以日常用户 SSH 登录小主机"
 	@echo "  make forward          通过 USB 转发 2222/8888/8080/7681 端口"
@@ -50,3 +52,13 @@ backup:
 	adb shell su -c "/data/local/linux/linux.sh stop"
 	adb pull /data/local/linux/ubuntu.img ./ubuntu-backup-$$(date +%Y%m%d).img
 	adb shell su -c "/data/local/linux/linux.sh start"
+
+install-apk:
+	@test -n "$(APK)" || (echo "用法: make install-apk APK=/path/to/app.apk" && exit 1)
+	scp "$(APK)" $(PHONE_SSH):/mnt/sdcard/Download/.tmp-install.apk
+	ssh $(PHONE_SSH) 'nsenter -t 1 -m -- /system/bin/sh -c "cp /sdcard/Download/.tmp-install.apk /data/local/tmp/.tmp-install.apk && pm install -r /data/local/tmp/.tmp-install.apk && rm -f /data/local/tmp/.tmp-install.apk /sdcard/Download/.tmp-install.apk"'
+
+install-latest-apk:
+	curl -fL -o /tmp/phone-mini-server-latest.apk "https://github.com/qianxunslimg/phone-lab/releases/download/app-latest/phone-mini-server.apk"
+	$(MAKE) install-apk APK=/tmp/phone-mini-server-latest.apk
+	rm -f /tmp/phone-mini-server-latest.apk

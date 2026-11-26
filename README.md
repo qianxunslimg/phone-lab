@@ -1,4 +1,4 @@
-# Android Root 手机改造 ARM64 Linux 小主机
+# Phone Lab — Root 安卓硬件改造、ARM64 Linux 小主机与自研 App 实验室
 
 > 把一台已 Root 的 **Redmi Note 11 SE（天玑 700 / 8GB RAM / 128GB / MIUI 14 / Android 13）** 改造成 24 小时低功耗原生 **Ubuntu 24.04.5 LTS ARM64** 小主机，完整保留原安卓系统，附带硬件级直驱充电保护（ACC）、前后端分离的 Web 监控与控制中心、FileBrowser 轻网盘、ttyd 网页终端与本机同款 Oh My Zsh 环境。
 
@@ -23,7 +23,7 @@
 ## 目录结构
 
 ```text
-android-mini-server/
+phone-lab/
 ├── Makefile                        # 一键部署 / 查看状态 / SSH / USB 转发 / 镜像备份
 ├── README.md
 ├── android/                        # Android 宿主侧（Magisk / chroot 编排）
@@ -58,6 +58,8 @@ android-mini-server/
 ```bash
 make deploy            # 一键同步 android/ ubuntu/ dashboard/ 到手机并重启控制台
 make deploy-dashboard  # 修改前端或后端代码后，2 秒热部署到手机 :8888
+make install-apk APK=x.apk  # 免 USB 线走 Wi-Fi (SSH + nsenter) 隔空静默安装 APK
+make install-latest-apk     # 拉取 GitHub Releases 最新伴侣 APK 并无线直装到手机
 make status            # 查看手机小主机挂载、4 个服务状态、IP 与电量
 make ssh               # 以日常用户免密登录小主机
 make forward           # 通过 USB 转发 2222 / 8888 / 8080 / 7681 端口

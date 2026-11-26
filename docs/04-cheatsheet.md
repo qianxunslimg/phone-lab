@@ -65,7 +65,27 @@ adb shell su -c "acc -f 100"              # 临时充满一次到 100%（适合�
 
 ---
 
-## 5. 备份与彻底卸载
+## 5. 免 USB 线隔空无线安装 APK（SSH + `nsenter`）
+
+### 原理
+Ubuntu `chroot` 与 Android 共享同一个 Linux 内核与 PID 命名空间。通过 `nsenter -t 1 -m` 切回 Android `init`（PID 1）的挂载命名空间，即可在 Wi-Fi SSH 内直接调用 Android 宿主的 `/system/bin/pm install` 静默安装 APK，**完全无需插 USB 数据线，也无需开启无线 ADB**。
+
+### 使用方式
+```bash
+# 方式 1：直接使用 Makefile（推荐）
+make install-apk APK=/path/to/your.apk   # 无线静默安装任意本地 APK
+make install-latest-apk                  # 拉取最新伴侣 App Release 并无线直装
+
+# 方式 2：手工两行命令
+scp your.apk phone-root:/mnt/sdcard/Download/.tmp.apk
+ssh phone-root 'nsenter -t 1 -m -- /system/bin/sh -c "cp /sdcard/Download/.tmp.apk /data/local/tmp/.tmp.apk && pm install -r /data/local/tmp/.tmp.apk && rm -f /data/local/tmp/.tmp.apk /sdcard/Download/.tmp.apk"'
+```
+
+> **提示**：同样原理也可以在 SSH 里用 `nsenter -t 1 -m -- /system/bin/sh -c "..."` 直接执行任何 Android 宿主命令（如 `pm list packages`、`am start`、`acc -s` 等）。
+
+---
+
+## 6. 备份与彻底卸载
 
 ### 备份整个 Ubuntu 系统
 ```bash
