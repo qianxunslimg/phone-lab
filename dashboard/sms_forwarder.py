@@ -73,17 +73,35 @@ def _log(msg: str):
         pass
 
 
-def _pick_existing_db(candidates: list) -> str:
+def _pick_existing_db(candidates: list, table_hint: str = "") -> str:
+    """Pick the real active SQLite DB (preferring non-empty target table over newer empty shadow DBs)."""
     best = ""
-    best_mtime = -1.0
-    for p in candidates:
+    best_score = (-1, -1.0, -1)
+    for idx, p in enumerate(candidates):
         try:
             st = os.stat(p)
-            if st.st_size > 0 and st.st_mtime > best_mtime:
-                best = p
-                best_mtime = st.st_mtime
+            if st.st_size <= 0:
+                continue
         except OSError:
             continue
+        row_count = 0
+        if table_hint:
+            con = None
+            tmpdir = ""
+            try:
+                con, tmpdir = _open_snapshot_sqlite(p)
+                row = con.execute(f"SELECT COUNT(*) FROM {table_hint}").fetchone()
+                row_count = int(row[0]) if row else 0
+            except Exception:
+                row_count = 0
+            finally:
+                if con is not None:
+                    _close_snapshot(con, tmpdir)
+        # Prefer DB with rows > 0, then higher row count, then earlier candidate priority, then mtime
+        score = (1 if row_count > 0 else 0, row_count, -idx, st.st_mtime)
+        if score > best_score:
+            best_score = score
+            best = p
     return best
 
 
@@ -113,7 +131,7 @@ def _close_snapshot(con, tmpdir: str):
 
 def get_sim_cards() -> list:
     """Return SIM / eSIM list from Android's telephony.db siminfo table."""
-    db_path = _pick_existing_db(TELEPHONY_DB_CANDIDATES)
+    db_path = _pick_existing_db(TELEPHONY_DB_CANDIDATES, table_hint="siminfo")
     if not db_path:
         return []
     con = None
@@ -199,7 +217,7 @@ def extract_otp(body: str) -> str:
 
 def query_recent_sms(limit: int = 20, after_id: int = None) -> list:
     """Read received SMS (type=1) from Android mmssms.db."""
-    db_path = _pick_existing_db(SMS_DB_CANDIDATES)
+    db_path = _pick_existing_db(SMS_DB_CANDIDATES, table_hint="sms")
     if not db_path:
         return []
     con = None
@@ -209,23 +227,27 @@ def query_recent_sms(limit: int = 20, after_id: int = None) -> list:
         cur = con.cursor()
         cols = {r[1] for r in cur.execute("PRAGMA table_info(sms)").fetchall()}
         sub_col = "sub_id" if "sub_id" in cols else "-1"
+        sim_col = "sim_id" if "sim_id" in cols else "-1"
         if after_id is not None:
             sql = (
-                f"SELECT _id, address, date, body, {sub_col} "
+                f"SELECT _id, address, date, body, {sub_col}, {sim_col} "
                 f"FROM sms WHERE type = 1 AND _id > ? ORDER BY _id ASC"
             )
             rows = cur.execute(sql, (int(after_id),)).fetchall()
         else:
             sql = (
-                f"SELECT _id, address, date, body, {sub_col} "
+                f"SELECT _id, address, date, body, {sub_col}, {sim_col} "
                 f"FROM sms WHERE type = 1 ORDER BY _id DESC LIMIT ?"
             )
             rows = cur.execute(sql, (int(limit),)).fetchall()
 
         sim_map = _sim_label_map()
         items = []
-        for sms_id, address, date_ms, body, sub_id in rows:
-            sub_int = int(sub_id) if sub_id is not None else -1
+        for sms_id, address, date_ms, body, sub_id, sim_id in rows:
+            # AOSP uses sub_id (>0); MIUI stores subscription ID in sim_id (>0) while sub_id is -1
+            raw_sub = int(sub_id) if sub_id is not None else -1
+            raw_sim = int(sim_id) if sim_id is not None else -1
+            eff_sub = raw_sub if raw_sub > 0 else (raw_sim if raw_sim > 0 else -1)
             ts_str = ""
             try:
                 ts_str = datetime.fromtimestamp(int(date_ms) / 1000.0).strftime("%Y-%m-%d %H:%M:%S")
@@ -238,8 +260,8 @@ def query_recent_sms(limit: int = 20, after_id: int = None) -> list:
                 "date_ms": int(date_ms or 0),
                 "time": ts_str,
                 "body": body_str,
-                "sub_id": sub_int,
-                "sim_label": sim_map.get(sub_int, f"SIM#{sub_int}" if sub_int > 0 else "未知卡槽"),
+                "sub_id": eff_sub,
+                "sim_label": sim_map.get(eff_sub, f"SIM#{eff_sub}" if eff_sub > 0 else "未知卡槽"),
                 "otp": extract_otp(body_str),
             })
         return items
@@ -252,7 +274,7 @@ def query_recent_sms(limit: int = 20, after_id: int = None) -> list:
 
 
 def _get_max_inbox_id() -> int:
-    db_path = _pick_existing_db(SMS_DB_CANDIDATES)
+    db_path = _pick_existing_db(SMS_DB_CANDIDATES, table_hint="sms")
     if not db_path:
         return 0
     con = None
@@ -386,9 +408,13 @@ def send_sms_email(cfg: dict, sms: dict, is_test: bool = False) -> tuple:
 
 
 def _should_forward(cfg: dict, sms: dict) -> tuple:
-    sim_ids = cfg.get("sim_ids") or []
-    if sim_ids and sms.get("sub_id") not in sim_ids:
-        return False, f"已过滤（非目标 SIM 卡: {sms.get('sim_label')}）"
+    sim_ids = [int(x) for x in (cfg.get("sim_ids") or [])]
+    if sim_ids:
+        all_known = {s["sub_id"] for s in get_sim_cards()}
+        # If user selected every known SIM card, treat as "all SIMs" so unknown-slot SMS still forward
+        all_selected = bool(all_known) and all_known.issubset(set(sim_ids))
+        if not all_selected and sms.get("sub_id") not in sim_ids:
+            return False, f"已过滤（非目标 SIM 卡: {sms.get('sim_label')}）"
     if cfg.get("only_otp") and not sms.get("otp"):
         return False, "已过滤（未检测到验证码）"
     return True, ""
@@ -503,7 +529,7 @@ def _db_signature(db_path: str):
 
 def _watcher_loop():
     _log("SMS forwarder watcher thread started")
-    db_path = _pick_existing_db(SMS_DB_CANDIDATES)
+    db_path = _pick_existing_db(SMS_DB_CANDIDATES, table_hint="sms")
     inotify_fd = _setup_inotify(os.path.dirname(db_path)) if db_path else -1
     if inotify_fd >= 0:
         _log(f"watching SMS DB dir with inotify: {os.path.dirname(db_path)}")
@@ -525,9 +551,8 @@ def _watcher_loop():
             else:
                 time.sleep(3.0)
 
-            cur_db = _pick_existing_db(SMS_DB_CANDIDATES)
-            if cur_db and cur_db != db_path:
-                db_path = cur_db
+            if not db_path or not os.path.exists(db_path):
+                db_path = _pick_existing_db(SMS_DB_CANDIDATES, table_hint="sms")
                 last_sig = None
 
             if db_path:
@@ -555,7 +580,7 @@ def get_status() -> dict:
         cfg = dict(_load_config_unlocked())
     sims = get_sim_cards()
     recent = query_recent_sms(limit=20)
-    db_path = _pick_existing_db(SMS_DB_CANDIDATES)
+    db_path = _pick_existing_db(SMS_DB_CANDIDATES, table_hint="sms")
     return {
         "ok": True,
         "db_available": bool(db_path),
