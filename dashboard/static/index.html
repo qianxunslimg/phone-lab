@@ -26,6 +26,7 @@
     <div class="topbar-right">
       <nav class="nav-tabs" aria-label="页面切换">
         <button class="tab-btn active" data-tab="overview" type="button">📊 监控总览</button>
+        <button class="tab-btn" data-tab="phone" type="button">📱 云手机</button>
         <button class="tab-btn" data-tab="sms" type="button">📩 短信转发</button>
         <button class="tab-btn" data-tab="control" type="button">🎛️ 控制中心</button>
       </nav>
@@ -351,7 +352,101 @@
     </article>
   </main>
 
+  <!-- ==================== TAB 4: 浏览器云手机 ==================== -->
+  <main id="tab-phone" class="hidden">
+    <section class="ctrl-banner">
+      <span>📱 浏览器云手机（官方 scrcpy 硬件 H.264 编码 · 原生触控/中文剪贴板 · 离开页面自动停机 0 耗电）</span>
+      <div class="ctrl-actions">
+        <span class="tag" id="phone-conn-tag">未连接</span>
+        <button class="btn sm secondary" id="btn-logout-phone" type="button">🔒 锁定退出</button>
+      </div>
+    </section>
+
+    <section class="phone-layout">
+      <div class="phone-stage">
+        <div class="phone-bezel" id="phone-bezel">
+          <video id="scrcpy-video" autoplay muted playsinline tabindex="0"></video>
+          <div class="phone-overlay" id="phone-overlay">
+            <div class="phone-overlay-inner">
+              <div style="font-size:34px;margin-bottom:8px;">📱</div>
+              <div id="phone-overlay-msg" style="font-size:14px;color:var(--text);margin-bottom:12px;">点击下方按钮连接实时画面</div>
+              <button class="btn" id="btn-phone-connect-big" type="button">▶️ 连接手机屏幕</button>
+            </div>
+          </div>
+        </div>
+        <div class="phone-nav-bar">
+          <button class="btn sm secondary" data-phone-key="back" type="button" title="返回 / 唤醒屏幕">◀ 返回</button>
+          <button class="btn sm secondary" data-phone-key="home" type="button" title="回到桌面">● 桌面</button>
+          <button class="btn sm secondary" data-phone-key="recent" type="button" title="最近任务">▢ 多任务</button>
+          <button class="btn sm secondary" data-phone-key="panel" type="button" title="下拉通知栏">🔔 通知</button>
+        </div>
+      </div>
+
+      <div class="phone-sidebar">
+        <article class="card">
+          <div class="card-hd">
+            <h2>🎬 投屏连接与画质</h2>
+            <span class="tag" id="phone-res-tag">--</span>
+          </div>
+          <div class="form-grid">
+            <label class="text-field">
+              <span>分辨率上限</span>
+              <select id="phone-max-size" class="select-input">
+                <option value="720">流畅 (720p)</option>
+                <option value="1080" selected>高清 (1080p)</option>
+                <option value="1440">超清 (1440p)</option>
+              </select>
+            </label>
+            <label class="text-field">
+              <span>帧率 &amp; 码率</span>
+              <select id="phone-fps-br" class="select-input">
+                <option value="30,2000000">30fps · 2Mbps (省流)</option>
+                <option value="30,4000000" selected>30fps · 4Mbps (均衡)</option>
+                <option value="60,8000000">60fps · 8Mbps (丝滑)</option>
+              </select>
+            </label>
+          </div>
+          <div class="ctrl-actions">
+            <button class="btn" id="btn-phone-connect" type="button">▶️ 连接投屏</button>
+            <button class="btn secondary" id="btn-phone-disconnect" type="button">⏹️ 断开</button>
+            <button class="btn secondary" id="btn-phone-fullscreen" type="button">⛶ 全屏</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-hd">
+            <h2>⌨️ 发送文本 / 剪贴板粘贴</h2>
+            <span class="tag ok">支持中文 &amp; 符号</span>
+          </div>
+          <p class="sub">先在左侧画面点中手机输入框，再在这里输入文字直接一键粘贴（绕过手机输入法干扰）。</p>
+          <textarea id="phone-paste-input" class="paste-area" rows="3" placeholder="输入要发送到手机的中文、英文、链接或密码..."></textarea>
+          <div class="ctrl-actions">
+            <button class="btn sm" id="btn-phone-paste" type="button">📤 粘贴到手机</button>
+            <button class="btn sm secondary" id="btn-phone-enter" type="button">↵ 回车</button>
+            <button class="btn sm secondary" id="btn-phone-backspace" type="button">⌫ 退格</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-hd">
+            <h2>🎛️ 硬件按键 &amp; 熄屏操控</h2>
+            <span class="tag">快捷控制</span>
+          </div>
+          <div class="ctrl-actions">
+            <button class="btn sm secondary" data-phone-key="vol_up" type="button">🔊 音量 +</button>
+            <button class="btn sm secondary" data-phone-key="vol_down" type="button">🔉 音量 -</button>
+            <button class="btn sm secondary" data-phone-key="power" type="button">🔌 电源/唤醒</button>
+            <button class="btn sm secondary" id="btn-phone-screen-off" type="button">🌙 熄屏操控</button>
+            <button class="btn sm secondary" id="btn-phone-screen-on" type="button">☀️ 恢复亮屏</button>
+          </div>
+          <p class="sub">提示：鼠标左键点按/拖动即可操作手机，滚轮可上下滚动，右键等于「返回」。点击「熄屏操控」可关闭手机实体屏幕省电防烧屏，浏览器里照常操控！</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
   <div class="toast" id="toast"></div>
+  <script src="/vendor/jmuxer.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

@@ -42,12 +42,16 @@
 
   function updateControlAuthUI() {
     const authed = Boolean(authToken);
-    const needAuth = activeTab === "control" || activeTab === "sms";
+    const needAuth = activeTab === "control" || activeTab === "sms" || activeTab === "phone";
     $("tab-overview").classList.toggle("hidden", activeTab !== "overview");
     $("tab-control").classList.toggle("hidden", !needAuth || (authed && activeTab !== "control"));
     $("auth-gate").classList.toggle("hidden", authed || !needAuth);
     $("control-panel").classList.toggle("hidden", !authed || activeTab !== "control");
     $("tab-sms").classList.toggle("hidden", !authed || activeTab !== "sms");
+    $("tab-phone").classList.toggle("hidden", !authed || activeTab !== "phone");
+    if (activeTab !== "phone" && typeof disconnectCloudPhone === "function") {
+      disconnectCloudPhone(false);
+    }
     if (authed && activeTab === "control") {
       loadAccConfig();
     }
@@ -57,6 +61,7 @@
   }
 
   function lockControlCenter(msg) {
+    if (typeof disconnectCloudPhone === "function") disconnectCloudPhone(false);
     authToken = "";
     accLoaded = false;
     smsLoaded = false;
@@ -577,6 +582,332 @@
     await apiPost("/api/service", { service: btn.dataset.svc, action: btn.dataset.act });
     setTimeout(refresh, 800);
   });
+
+  // ==================== Cloud Phone (scrcpy over WebSocket + JMuxer) ====================
+  let phoneWs = null;
+  let phoneMuxer = null;
+  let phoneCatchupTimer = null;
+  let phoneMeta = { width: 488, height: 1080 };
+  let phonePointerDown = false;
+  let phoneLastMoveAt = 0;
+
+  function setPhoneUIState(state, msg) {
+    const tag = $("phone-conn-tag");
+    const overlay = $("phone-overlay");
+    const overlayMsg = $("phone-overlay-msg");
+    if (state === "connected") {
+      tag.textContent = "● 实时投屏中";
+      tag.className = "tag ok";
+      overlay.classList.add("hidden");
+    } else if (state === "connecting") {
+      tag.textContent = "连接中...";
+      tag.className = "tag warn";
+      overlay.classList.remove("hidden");
+      overlayMsg.textContent = msg || "正在启动硬件 H.264 投屏...";
+    } else {
+      tag.textContent = "未连接";
+      tag.className = "tag";
+      overlay.classList.remove("hidden");
+      overlayMsg.textContent = msg || "点击下方按钮连接实时画面";
+      $("phone-res-tag").textContent = "--";
+    }
+  }
+
+  function phoneSend(obj) {
+    if (phoneWs && phoneWs.readyState === WebSocket.OPEN) {
+      phoneWs.send(JSON.stringify(obj));
+      return true;
+    }
+    return false;
+  }
+
+  function disconnectCloudPhone(showMsg = true) {
+    phonePointerDown = false;
+    if (phoneCatchupTimer) {
+      clearInterval(phoneCatchupTimer);
+      phoneCatchupTimer = null;
+    }
+    if (phoneWs) {
+      const ws = phoneWs;
+      phoneWs = null;
+      try { ws.close(); } catch {}
+    }
+    if (phoneMuxer) {
+      try { phoneMuxer.destroy(); } catch {}
+      phoneMuxer = null;
+    }
+    const video = $("scrcpy-video");
+    if (video) {
+      try {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      } catch {}
+    }
+    setPhoneUIState("idle");
+    if (showMsg) toast("已断开云手机投屏");
+  }
+
+  async function connectCloudPhone() {
+    if (!authToken) {
+      lockControlCenter("请先登录控制中心");
+      return;
+    }
+    if (typeof JMuxer === "undefined") {
+      toast("JMuxer 解码器未加载，请刷新页面");
+      return;
+    }
+    disconnectCloudPhone(false);
+    setPhoneUIState("connecting", "正在申请连接凭证...");
+
+    let ticket = "";
+    try {
+      const res = await fetch("/api/scrcpy/ticket", {
+        method: "POST",
+        headers: { Authorization: authToken },
+      });
+      if (res.status === 401) {
+        lockControlCenter("认证已失效，请重新登录");
+        return;
+      }
+      const data = await res.json();
+      if (!data.ok || !data.ticket) {
+        setPhoneUIState("idle", data.message || "获取连接凭证失败");
+        toast(data.message || "获取连接凭证失败");
+        return;
+      }
+      ticket = data.ticket;
+    } catch {
+      setPhoneUIState("idle", "请求投屏凭证失败");
+      return;
+    }
+
+    const maxSize = Number($("phone-max-size").value) || 1080;
+    const [fpsStr, brStr] = ($("phone-fps-br").value || "30,4000000").split(",");
+    const maxFps = Number(fpsStr) || 30;
+    const bitrate = Number(brStr) || 4000000;
+
+    setPhoneUIState("connecting", "正在连接手机视频流...");
+    phoneMuxer = new JMuxer({
+      node: "scrcpy-video",
+      mode: "video",
+      flushingTime: 0,
+      fps: maxFps,
+      clearBuffer: true,
+      debug: false,
+    });
+
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = `${proto}://${window.location.host}/api/scrcpy/ws?token=${encodeURIComponent(ticket)}&max_size=${maxSize}&max_fps=${maxFps}&bitrate=${bitrate}`;
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = "arraybuffer";
+    phoneWs = ws;
+
+    ws.onopen = () => {
+      setPhoneUIState("connected");
+      const video = $("scrcpy-video");
+      video.play().catch(() => {});
+      // Keep MSE buffer tightly synced to live edge (< 250ms)
+      phoneCatchupTimer = setInterval(() => {
+        if (!video || !video.buffered || video.buffered.length === 0) return;
+        const end = video.buffered.end(video.buffered.length - 1);
+        if (end - video.currentTime > 0.35) {
+          video.currentTime = Math.max(0, end - 0.05);
+        }
+        if (video.paused && phoneWs && phoneWs.readyState === WebSocket.OPEN) {
+          video.play().catch(() => {});
+        }
+      }, 1500);
+    };
+
+    ws.onmessage = (ev) => {
+      if (phoneWs !== ws) return;
+      if (typeof ev.data === "string") {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === "meta") {
+            phoneMeta = { width: msg.width || 488, height: msg.height || 1080 };
+            $("phone-res-tag").textContent = `${msg.device || "Android"} · ${phoneMeta.width}×${phoneMeta.height}`;
+          } else if (msg.type === "error") {
+            toast(msg.message || "投屏出错");
+            setPhoneUIState("idle", msg.message || "投屏出错");
+          }
+        } catch {}
+        return;
+      }
+      if (phoneMuxer) {
+        phoneMuxer.feed({ video: new Uint8Array(ev.data) });
+      }
+    };
+
+    ws.onerror = () => {
+      if (phoneWs === ws) {
+        setPhoneUIState("idle", "WebSocket 连接中断，请重试");
+      }
+    };
+
+    ws.onclose = () => {
+      if (phoneWs === ws) {
+        disconnectCloudPhone(false);
+      }
+    };
+  }
+
+  function mapVideoCoords(ev) {
+    const video = $("scrcpy-video");
+    const rect = video.getBoundingClientRect();
+    const vw = video.videoWidth || phoneMeta.width || 488;
+    const vh = video.videoHeight || phoneMeta.height || 1080;
+    if (!rect.width || !rect.height) return null;
+
+    // Account for object-fit: contain letterboxing (especially in fullscreen)
+    const videoRatio = vw / vh;
+    const boxRatio = rect.width / rect.height;
+    let drawW = rect.width;
+    let drawH = rect.height;
+    let offsetX = 0;
+    let offsetY = 0;
+    if (boxRatio > videoRatio) {
+      drawW = rect.height * videoRatio;
+      offsetX = (rect.width - drawW) / 2;
+    } else {
+      drawH = rect.width / videoRatio;
+      offsetY = (rect.height - drawH) / 2;
+    }
+    const relX = (ev.clientX - rect.left - offsetX) / drawW;
+    const relY = (ev.clientY - rect.top - offsetY) / drawH;
+    const clampedX = Math.max(0, Math.min(1, relX));
+    const clampedY = Math.max(0, Math.min(1, relY));
+    return {
+      x: Math.round(clampedX * vw),
+      y: Math.round(clampedY * vh),
+      w: vw,
+      h: vh,
+    };
+  }
+
+  const scrcpyVideo = $("scrcpy-video");
+  if (scrcpyVideo) {
+    scrcpyVideo.addEventListener("pointerdown", (ev) => {
+      if (ev.button === 2) return; // handled by contextmenu
+      if (!phoneWs || phoneWs.readyState !== WebSocket.OPEN) return;
+      ev.preventDefault();
+      scrcpyVideo.focus();
+      scrcpyVideo.setPointerCapture(ev.pointerId);
+      const pt = mapVideoCoords(ev);
+      if (!pt) return;
+      phonePointerDown = true;
+      phoneSend({ type: "touch", action: 0, ...pt });
+    });
+
+    scrcpyVideo.addEventListener("pointermove", (ev) => {
+      if (!phonePointerDown) return;
+      const now = performance.now();
+      if (now - phoneLastMoveAt < 16) return;
+      phoneLastMoveAt = now;
+      const pt = mapVideoCoords(ev);
+      if (!pt) return;
+      phoneSend({ type: "touch", action: 2, ...pt });
+    });
+
+    const endTouch = (ev) => {
+      if (!phonePointerDown) return;
+      phonePointerDown = false;
+      const pt = mapVideoCoords(ev);
+      if (pt) phoneSend({ type: "touch", action: 1, ...pt });
+    };
+    scrcpyVideo.addEventListener("pointerup", endTouch);
+    scrcpyVideo.addEventListener("pointercancel", endTouch);
+
+    scrcpyVideo.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      phoneSend({ type: "back_or_wake" });
+    });
+
+    scrcpyVideo.addEventListener("wheel", (ev) => {
+      if (!phoneWs || phoneWs.readyState !== WebSocket.OPEN) return;
+      ev.preventDefault();
+      const pt = mapVideoCoords(ev);
+      if (!pt) return;
+      const dy = ev.deltaY > 0 ? -0.35 : 0.35;
+      phoneSend({ type: "scroll", ...pt, dx: 0, dy });
+    }, { passive: false });
+
+    const KEY_MAP = {
+      Backspace: 67,
+      Enter: 66,
+      Escape: 4,
+      Tab: 61,
+      ArrowUp: 19,
+      ArrowDown: 20,
+      ArrowLeft: 21,
+      ArrowRight: 22,
+      Delete: 112,
+      Home: 3,
+    };
+    scrcpyVideo.addEventListener("keydown", (ev) => {
+      if (!phoneWs || phoneWs.readyState !== WebSocket.OPEN) return;
+      if (KEY_MAP[ev.key]) {
+        ev.preventDefault();
+        phoneSend({ type: "key", keycode: KEY_MAP[ev.key], action: "click" });
+      } else if (ev.key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+        ev.preventDefault();
+        phoneSend({ type: "text", text: ev.key });
+      }
+    });
+  }
+
+  $("btn-phone-connect").addEventListener("click", connectCloudPhone);
+  $("btn-phone-connect-big").addEventListener("click", connectCloudPhone);
+  $("btn-phone-disconnect").addEventListener("click", () => disconnectCloudPhone(true));
+  $("btn-logout-phone").addEventListener("click", () => lockControlCenter("已锁定退出"));
+
+  $("btn-phone-fullscreen").addEventListener("click", () => {
+    const bezel = $("phone-bezel");
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else if (bezel.requestFullscreen) {
+      bezel.requestFullscreen().catch(() => {});
+    }
+  });
+
+  $("btn-phone-paste").addEventListener("click", () => {
+    const txt = $("phone-paste-input").value;
+    if (!txt) {
+      toast("请先输入要发送的内容");
+      return;
+    }
+    if (phoneSend({ type: "paste", text: txt, paste: true })) {
+      toast("已粘贴到手机当前输入框");
+      $("phone-paste-input").value = "";
+    } else {
+      toast("请先连接云手机");
+    }
+  });
+
+  $("btn-phone-enter").addEventListener("click", () => phoneSend({ type: "key", keycode: 66, action: "click" }));
+  $("btn-phone-backspace").addEventListener("click", () => phoneSend({ type: "key", keycode: 67, action: "click" }));
+  $("btn-phone-screen-off").addEventListener("click", () => {
+    if (phoneSend({ type: "screen_power", on: false })) toast("已关闭手机实体屏幕（后台继续操控）");
+  });
+  $("btn-phone-screen-on").addEventListener("click", () => {
+    if (phoneSend({ type: "screen_power", on: true })) toast("已恢复手机实体屏幕");
+  });
+
+  document.querySelectorAll("[data-phone-key]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const k = btn.dataset.phoneKey;
+      if (k === "back") phoneSend({ type: "back_or_wake" });
+      else if (k === "home") phoneSend({ type: "key", keycode: 3, action: "click" });
+      else if (k === "recent") phoneSend({ type: "key", keycode: 187, action: "click" });
+      else if (k === "power") phoneSend({ type: "key", keycode: 26, action: "click" });
+      else if (k === "vol_up") phoneSend({ type: "key", keycode: 24, action: "click" });
+      else if (k === "vol_down") phoneSend({ type: "key", keycode: 25, action: "click" });
+      else if (k === "panel") phoneSend({ type: "panel", action: "expand" });
+    });
+  });
+
+  window.addEventListener("beforeunload", () => disconnectCloudPhone(false));
 
   let pollTimer = null;
   async function schedulePoll() {

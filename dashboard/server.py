@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from metrics import collect_snapshot
+import scrcpy_bridge
 import sms_forwarder
 from services import (
     control_service,
@@ -36,6 +37,7 @@ STATIC_ROUTES = {
     "/icon.svg": ("icon.svg", "image/svg+xml"),
     "/icon.png": ("icon.png", "image/png"),
     "/favicon.ico": ("icon.png", "image/png"),
+    "/vendor/jmuxer.min.js": ("vendor/jmuxer.min.js", "application/javascript; charset=utf-8"),
 }
 
 _cache_lock = threading.Lock()
@@ -172,6 +174,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_json(200, sms_forwarder.get_status())
             return
 
+        if parsed.path == "/api/scrcpy/ws":
+            scrcpy_bridge.handle_websocket_upgrade(self, qs)
+            return
+
         self.send_error(404)
 
     def do_POST(self):
@@ -231,6 +237,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return
             ok, msg = sms_forwarder.resend_sms_by_id(sms_id)
             self.send_json(200 if ok else 400, {"ok": ok, "message": msg, "status": sms_forwarder.get_status()})
+            return
+
+        if parsed.path == "/api/scrcpy/ticket":
+            if not scrcpy_bridge.is_available():
+                self.send_json(503, {"ok": False, "message": "手机端未安装 scrcpy-server.jar"})
+                return
+            self.send_json(200, {"ok": True, "ticket": scrcpy_bridge.issue_ticket()})
             return
 
         self.send_error(404)

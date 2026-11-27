@@ -660,3 +660,116 @@ pre.logbox {
   font-weight: 700;
   cursor: pointer;
 }
+
+.phone-layout {
+  display: grid;
+  grid-template-columns: minmax(290px, 390px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 820px) {
+  .phone-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.phone-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.phone-bezel {
+  position: relative;
+  width: 100%;
+  max-width: 370px;
+  min-height: 540px;
+  background: #050811;
+  border: 3px solid #26355c;
+  border-radius: 26px;
+  overflow: hidden;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  touch-action: none;
+}
+
+.phone-bezel:fullscreen {
+  max-width: none;
+  border-radius: 0;
+  border: none;
+  background: #000;
+}
+
+#scrcpy-video {
+  width: 100%;
+  height: auto;
+  max-height: 75vh;
+  display: block;
+  object-fit: contain;
+  cursor: pointer;
+  outline: none;
+  background: #050811;
+}
+
+.phone-bezel:fullscreen #scrcpy-video {
+  max-height: 100vh;
+  height: 100vh;
+}
+
+.phone-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(9, 14, 26, 0.86);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px;
+}
+
+.phone-overlay-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.phone-nav-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.phone-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.select-input,
+.paste-area {
+  background: #0b1224;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  width: 100%;
+}
+
+.select-input:focus,
+.paste-area:focus {
+  border-color: var(--accent);
+}
+
+.paste-area {
+  resize: vertical;
+  line-height: 1.5;
+}
