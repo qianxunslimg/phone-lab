@@ -1,18 +1,28 @@
 # Phone Lab — Root 安卓硬件改造、ARM64 Linux 小主机与自研 App 实验室
 
-> 把一台已 Root 的 **Redmi Note 11 SE（天玑 700 / 8GB RAM / 128GB / MIUI 14 / Android 13）** 改造成 24 小时低功耗原生 **Ubuntu 24.04.5 LTS ARM64** 小主机，完整保留原安卓系统，附带硬件级直驱充电保护（ACC）、前后端分离的 Web 监控与控制中心、FileBrowser 轻网盘、ttyd 网页终端与本机同款 Oh My Zsh 环境。
+> 把一台已 Root 的 **Redmi Note 11 SE（天玑 700 / 8GB RAM / 128GB / MIUI 14 / Android 13）** 改造成 24 小时低功耗原生 **Ubuntu 24.04.5 LTS ARM64** 小主机，完整保留原安卓系统，附带硬件级直驱充电保护（ACC）、前后端分离的 Web 控制台（实时监控 + **浏览器云手机** + **双卡/eSIM 短信邮箱转发** + 控制中心）、FileBrowser 轻网盘、ttyd 网页终端与本机同款 Oh My Zsh 环境。
 
 ---
 
 ## 界面预览
 
 ### 1. 监控总览（只读实时看板）
-实时展示电池与联发科硬件直驱状态、8 核主频柱状图、4 路温度传感器、CPU/内存/Wi-Fi 滚动曲线、存储空间、核心服务、TCP 监听端口与 Top 12 进程。
+实时展示电池与联发科硬件直驱状态、8 核主频柱状图、4 路温度传感器、CPU/内存/Wi-Fi 滚动曲线、存储空间、核心服务、TCP 监听端口与 Top 12 进程；无浏览器访问时自动进入零耗电休眠采集。
 
 ![小主机控制台 - 监控总览](docs/assets/overview.png)
 
-### 2. 控制中心身份门禁与控制面板
-点击顶部「🎛️ 控制中心」需先通过管理员身份验证；解锁后可实时调节 ACC 复充/停充阈值与温控、一键切换联发科硬件直驱供电、启停/重启服务、清理内存缓存与查看实时日志。
+### 2. 浏览器云手机（免 ADB · scrcpy 硬件 H.264 投屏）
+直接通过 Android `app_process64` 拉起官方 `scrcpy-server` 并经由共享抽象 Unix Socket 桥接到控制台 WebSocket，前端使用 JMuxer MSE 在普通局域网 HTTP 下实现 30~60fps 丝滑操控；支持鼠标点按/滑动/滚轮、右键返回、中文剪贴板直贴、**熄屏操控**，离开页面自动停机 0 耗电。
+
+![小主机控制台 - 浏览器云手机](docs/assets/cloud-phone.png)
+
+### 3. 双卡 / eSIM 短信 & 验证码实时邮箱转发
+后台 Root 守护线程通过 Linux `inotify` 毫秒级监听系统短信库（`mmssms.db`，兼容原生 `sub_id` 与 MIUI `sim_id`），永不被杀后台；支持按卡槽/eSIM 精准筛选、完整原文推送至 QQ/SMTP 邮箱、邮件标题自动高亮验证码，并提供收件箱查看与一键复制/补发。
+
+![小主机控制台 - 短信转发](docs/assets/sms-forwarder.png)
+
+### 4. 控制中心身份门禁与控制面板
+「📱 云手机」「📩 短信转发」「🎛️ 控制中心」均受管理员身份验证保护；解锁后可实时调节 ACC 复充/停充阈值与温控、一键切换联发科硬件直驱供电、启停/重启服务、清理内存缓存与查看实时日志。
 
 | 身份验证门禁 | 解锁后的控制中心 |
 | :---: | :---: |
@@ -34,14 +44,17 @@ phone-lab/
 ├── ubuntu/                         # Ubuntu 容器侧配置
 │   ├── rc.local                    # 开机拉起 Web 套件
 │   └── zshrc.template              # Oh My Zsh (ys 主题 + 常用插件) 模板
-├── dashboard/                      # 前后端分离的轻量控制台（零第三方依赖）
-│   ├── server.py                   # HTTP 路由与 Basic Auth 鉴权入口
+├── dashboard/                      # 前后端分离的轻量控制台（零第三方 Python 依赖）
+│   ├── server.py                   # HTTP/WebSocket 路由、按需休眠采集与 Basic Auth 鉴权
 │   ├── metrics.py                  # CPU/8核主频/4路温度/电池/网速/端口/进程采集
 │   ├── services.py                 # 服务启停、ACC 配置读写、硬件直驱与日志读取
+│   ├── scrcpy_bridge.py            # 官方 scrcpy-server 硬件 H.264 <-> WebSocket 云手机桥接
+│   ├── sms_forwarder.py            # Root inotify 短信实时监听、双卡/eSIM 过滤与 SMTP 转发
 │   └── static/
-│       ├── index.html              # 双页结构：监控总览（只读）+ 控制中心（鉴权门禁）
+│       ├── index.html              # 四页结构：监控总览 + 云手机 + 短信转发 + 控制中心
 │       ├── style.css               # 响应式深色主题样式
-│       ├── app.js                  # 前端交互、SVG 实时曲线与鉴权逻辑
+│       ├── app.js                  # 前端交互、SVG 曲线、JMuxer 投屏触控与鉴权逻辑
+│       ├── vendor/jmuxer.min.js    # 轻量 MSE fMP4/H.264 浏览器解码器
 │       ├── manifest.json           # PWA 独立应用清单
 │       ├── icon.svg / icon.png     # 矢量与 192×192 桌面应用图标
 └── docs/                           # 折腾过程、知识点与速查手册
@@ -71,7 +84,9 @@ make backup            # 停服并拉出 ubuntu.img 完整镜像备份
 ## 快速访问入口
 
 - **监控总览（只读）**：`http://<手机IP>:8888`（手机本机：`http://127.0.0.1:8888`）
-- **控制中心（需身份验证）**：点击页面顶部 **「🎛️ 控制中心」**，支持调节 ACC 复充/停充阈值与温控、联发科硬件直驱即时开关、服务启停/重启、清理内存缓存与查看服务日志
+- **浏览器云手机（需验证）**：点击顶部 **「📱 云手机」**，免 ADB 实时看画面、鼠标触控滑动、中文粘贴与熄屏操控
+- **短信 & 验证码转发（需验证）**：点击顶部 **「📩 短信转发」**，配置 QQ/SMTP 邮箱与 SIM/eSIM 过滤规则，秒推完整短信
+- **控制中心（需验证）**：点击顶部 **「🎛️ 控制中心」**，支持调节 ACC 复充/停充阈值与温控、联发科硬件直驱即时开关、服务启停/重启、清理内存缓存与查看服务日志
 - **FileBrowser 轻网盘**：`http://<手机IP>:8080`
 - **ttyd 网页终端**：`http://<手机IP>:7681`
 - **SSH 登录**：`ssh phone`（或换电脑后 `ssh <your-user>@<手机IP>`）
