@@ -7,6 +7,8 @@
 
   let sortBy = "cpu";
   let accLoaded = false;
+  let smsLoaded = false;
+  let activeTab = "overview";
   let authToken = sessionStorage.getItem("phone_srv_auth") || "";
 
   function toast(msg) {
@@ -16,18 +18,48 @@
     setTimeout(() => el.classList.remove("show"), 2600);
   }
 
+  function escapeHtml(s) {
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function copyText(txt, label) {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(txt).then(() => toast(`已复制${label || ""}: ${txt}`));
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = txt;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      toast(`已复制${label || ""}: ${txt}`);
+    }
+  }
+
   function updateControlAuthUI() {
     const authed = Boolean(authToken);
-    $("auth-gate").classList.toggle("hidden", authed);
-    $("control-panel").classList.toggle("hidden", !authed);
-    if (authed) {
+    const needAuth = activeTab === "control" || activeTab === "sms";
+    $("tab-overview").classList.toggle("hidden", activeTab !== "overview");
+    $("tab-control").classList.toggle("hidden", !needAuth || (authed && activeTab !== "control"));
+    $("auth-gate").classList.toggle("hidden", authed || !needAuth);
+    $("control-panel").classList.toggle("hidden", !authed || activeTab !== "control");
+    $("tab-sms").classList.toggle("hidden", !authed || activeTab !== "sms");
+    if (authed && activeTab === "control") {
       loadAccConfig();
+    }
+    if (authed && activeTab === "sms") {
+      loadSmsStatus();
     }
   }
 
   function lockControlCenter(msg) {
     authToken = "";
     accLoaded = false;
+    smsLoaded = false;
     sessionStorage.removeItem("phone_srv_auth");
     $("auth-pass").value = "";
     updateControlAuthUI();
@@ -156,11 +188,135 @@
     $("inline-log-content").textContent = data.content || "(暂无日志)";
   }
 
+  function renderSmsStatus(data, forceFillForm = false) {
+    if (!data || !data.config) return;
+    const c = data.config;
+    const tag = $("sms-state-tag");
+    if (!data.db_available) {
+      tag.textContent = "短信库不可访问";
+      tag.className = "tag warn";
+    } else if (c.enabled) {
+      tag.textContent = "● 监听转发中";
+      tag.className = "tag ok";
+    } else {
+      tag.textContent = "未开启";
+      tag.className = "tag warn";
+    }
+
+    $("sms-pass-hint").textContent = c.smtp_pass_set ? "（已保存）" : "（未设置）";
+    $("sms-meta-line").textContent =
+      `累计已转发：${c.forwarded_count || 0} 条` +
+      (c.last_sent_at ? ` · 最近发送：${c.last_sent_at}` : "") +
+      ` · 当前游标 ID #${c.last_sms_id || 0}`;
+
+    const errBox = $("sms-err-box");
+    if (c.last_error) {
+      errBox.textContent = `最近错误：${c.last_error}`;
+      errBox.classList.remove("hidden");
+    } else {
+      errBox.classList.add("hidden");
+    }
+
+    if (!smsLoaded || forceFillForm) {
+      $("sms-enabled").checked = Boolean(c.enabled);
+      $("sms-only-otp").checked = Boolean(c.only_otp);
+      $("sms-smtp-user").value = c.smtp_user || "";
+      $("sms-to-email").value = c.to_email || "";
+      $("sms-smtp-host").value = c.smtp_host || "smtp.qq.com";
+      $("sms-smtp-port").value = c.smtp_port || 465;
+
+      const selected = new Set((c.sim_ids || []).map(Number));
+      const sims = data.sims || [];
+      if (sims.length === 0) {
+        $("sms-sim-list").innerHTML = `<div class="sub">未检测到 SIM 卡记录（默认监听全部短信）</div>`;
+      } else {
+        $("sms-sim-list").innerHTML = sims.map((s) => `
+          <label class="switch-row">
+            <input type="checkbox" class="sms-sim-chk" value="${s.sub_id}" ${selected.has(s.sub_id) ? "checked" : ""} />
+            <span><b>${escapeHtml(s.slot_label)}</b> · ${escapeHtml(s.display_name)}${s.number ? ` <code>${escapeHtml(s.number)}</code>` : ""}</span>
+          </label>
+        `).join("");
+      }
+      smsLoaded = true;
+    }
+
+    const inbox = data.recent_sms || [];
+    $("sms-inbox-cnt").textContent = `${inbox.length} 条`;
+    if (inbox.length === 0) {
+      $("sms-inbox-list").innerHTML = `<div class="sub">暂无收件箱短信（收到新短信后会自动出现在这里并转发）</div>`;
+    } else {
+      $("sms-inbox-list").innerHTML = inbox.map((m) => `
+        <div class="sms-item">
+          <div class="sms-item-hd">
+            <span><b>${escapeHtml(m.address)}</b> · <span class="tag">${escapeHtml(m.sim_label)}</span></span>
+            ${m.otp ? `<span class="otp-badge" data-copy-otp="${escapeHtml(m.otp)}" title="点击复制验证码">验证码 ${escapeHtml(m.otp)} 📋</span>` : ""}
+          </div>
+          <div class="sms-body">${escapeHtml(m.body)}</div>
+          <div class="sms-foot">
+            <span>${escapeHtml(m.time)} · #${m.id}</span>
+            <button class="btn sm secondary" data-resend-sms="${m.id}" type="button">✉️ 转发到邮箱</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    const hist = data.history || [];
+    $("sms-hist-cnt").textContent = `${hist.length} 条`;
+    if (hist.length === 0) {
+      $("sms-hist-body").innerHTML = `<tr><td colspan="5" class="sub">暂无转发记录</td></tr>`;
+    } else {
+      $("sms-hist-body").innerHTML = hist.map((h) => {
+        const stCls = h.status === "ok" ? "ok" : "warn";
+        const stTxt = h.status === "ok" ? "已发送" : h.status === "skipped" ? "已过滤" : "失败";
+        return `
+          <tr>
+            <td>${escapeHtml(h.forwarded_at || h.time)}</td>
+            <td>${escapeHtml(h.sim_label)}</td>
+            <td><code>${escapeHtml(h.address)}</code></td>
+            <td><span class="tag ${stCls}">${stTxt}</span></td>
+            <td>${h.otp ? `<b>[${escapeHtml(h.otp)}]</b> ` : ""}${escapeHtml(h.detail || h.body)}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+  }
+
+  async function loadSmsStatus(forceFillForm = false) {
+    if (!authToken) return;
+    try {
+      const res = await fetch("/api/sms/status", { headers: { Authorization: authToken } });
+      if (res.status === 401) {
+        lockControlCenter("认证已失效，请重新登录");
+        return;
+      }
+      const data = await res.json();
+      renderSmsStatus(data, forceFillForm);
+    } catch {
+      $("sms-state-tag").textContent = "读取失败";
+    }
+  }
+
+  function collectSmsForm() {
+    const simIds = Array.from(document.querySelectorAll(".sms-sim-chk:checked")).map((el) => Number(el.value));
+    const payload = {
+      enabled: $("sms-enabled").checked,
+      only_otp: $("sms-only-otp").checked,
+      smtp_user: $("sms-smtp-user").value.trim(),
+      to_email: $("sms-to-email").value.trim(),
+      smtp_host: $("sms-smtp-host").value.trim() || "smtp.qq.com",
+      smtp_port: Number($("sms-smtp-port").value) || 465,
+      smtp_ssl: true,
+      sim_ids: simIds,
+    };
+    const pass = $("sms-smtp-pass").value.trim();
+    if (pass) payload.smtp_pass = pass;
+    return payload;
+  }
+
   function switchTab(tab) {
+    activeTab = tab;
     document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-    $("tab-overview").classList.toggle("hidden", tab !== "overview");
-    $("tab-control").classList.toggle("hidden", tab !== "control");
-    if (tab === "control") updateControlAuthUI();
+    updateControlAuthUI();
   }
 
   function setSort(mode) {
@@ -296,18 +452,7 @@
   });
 
   $("btn-copy-ssh").addEventListener("click", () => {
-    const txt = $("ssh-cmd").textContent;
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(txt).then(() => toast(`已复制: ${txt}`));
-    } else {
-      const ta = document.createElement("textarea");
-      ta.value = txt;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-      toast(`已复制: ${txt}`);
-    }
+    copyText($("ssh-cmd").textContent);
   });
 
   $("btn-sort-cpu").addEventListener("click", () => setSort("cpu"));
@@ -380,6 +525,31 @@
     lockControlCenter("控制中心已重新锁定");
   });
 
+  $("btn-logout-sms").addEventListener("click", () => {
+    lockControlCenter("已锁定退出");
+  });
+
+  $("btn-sms-refresh").addEventListener("click", () => {
+    loadSmsStatus(false);
+    toast("已刷新短信列表");
+  });
+
+  $("btn-sms-save").addEventListener("click", async () => {
+    const data = await apiPost("/api/sms/config", collectSmsForm());
+    if (data && data.status) {
+      $("sms-smtp-pass").value = "";
+      renderSmsStatus(data.status, true);
+    }
+  });
+
+  $("btn-sms-test").addEventListener("click", async () => {
+    toast("正在发送测试邮件...");
+    const data = await apiPost("/api/sms/test", collectSmsForm());
+    if (data && data.status) {
+      renderSmsStatus(data.status, false);
+    }
+  });
+
   $("btn-drop-caches").addEventListener("click", async () => {
     await apiPost("/api/drop-caches");
     setTimeout(refresh, 600);
@@ -390,6 +560,18 @@
   });
 
   document.body.addEventListener("click", async (e) => {
+    const otpEl = e.target.closest("[data-copy-otp]");
+    if (otpEl) {
+      copyText(otpEl.dataset.copyOtp, "验证码");
+      return;
+    }
+    const resendBtn = e.target.closest("[data-resend-sms]");
+    if (resendBtn) {
+      toast("正在转发短信...");
+      const data = await apiPost("/api/sms/resend", { id: Number(resendBtn.dataset.resendSms) });
+      if (data && data.status) renderSmsStatus(data.status, false);
+      return;
+    }
     const btn = e.target.closest("[data-svc]");
     if (!btn) return;
     await apiPost("/api/service", { service: btn.dataset.svc, action: btn.dataset.act });

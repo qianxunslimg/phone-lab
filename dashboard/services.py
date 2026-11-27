@@ -23,6 +23,7 @@ LOG_FILES = {
     "dashboard": "/var/log/phone-server/dashboard.log",
     "filebrowser": "/var/log/phone-server/filebrowser.log",
     "ttyd": "/var/log/phone-server/ttyd.log",
+    "sms": "/var/log/phone-server/sms-forwarder.log",
 }
 
 

@@ -26,6 +26,7 @@
     <div class="topbar-right">
       <nav class="nav-tabs" aria-label="页面切换">
         <button class="tab-btn active" data-tab="overview" type="button">📊 监控总览</button>
+        <button class="tab-btn" data-tab="sms" type="button">📩 短信转发</button>
         <button class="tab-btn" data-tab="control" type="button">🎛️ 控制中心</button>
       </nav>
       <div class="actions">
@@ -251,11 +252,103 @@
             <button class="btn sm secondary" data-inline-log="filebrowser" type="button">filebrowser</button>
             <button class="btn sm secondary" data-inline-log="ttyd" type="button">ttyd</button>
             <button class="btn sm secondary" data-inline-log="dashboard" type="button">dashboard</button>
+            <button class="btn sm secondary" data-inline-log="sms" type="button">sms</button>
           </div>
         </div>
         <pre class="logbox" id="inline-log-content">点击上方按钮加载对应服务日志</pre>
       </article>
     </div>
+  </main>
+
+  <!-- ==================== TAB 3: 短信转发 ==================== -->
+  <main id="tab-sms" class="hidden">
+    <section class="ctrl-banner">
+      <span>📩 短信实时监听中（Root 直读系统短信库 · 永不杀后台 · 完整原文转发）</span>
+      <div class="ctrl-actions">
+        <button class="btn sm secondary" id="btn-sms-refresh" type="button">🔄 刷新短信</button>
+        <button class="btn sm secondary" id="btn-logout-sms" type="button">🔒 锁定退出</button>
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <article class="card">
+        <div class="card-hd">
+          <h2>⚙️ 邮箱转发配置 (QQ / SMTP)</h2>
+          <span class="tag" id="sms-state-tag">加载中</span>
+        </div>
+        <p class="sub">收到新短信自动完整转发至目标邮箱；若包含验证码会顺手高亮在邮件标题里。</p>
+
+        <label class="switch-row">
+          <input type="checkbox" id="sms-enabled" />
+          <span><b>开启实时短信转发</b>（新短信毫秒级自动推送）</span>
+        </label>
+
+        <div class="ctrl-block">
+          <h3>监听 SIM 卡范围</h3>
+          <p class="sub">全不勾选 = 转发<b>所有手机卡</b>的短信；勾选指定卡 = 只转发对应卡槽的短信。</p>
+          <div class="sim-list" id="sms-sim-list">
+            <div class="sub">正在读取 SIM 卡信息...</div>
+          </div>
+          <label class="switch-row" style="margin-top:4px;">
+            <input type="checkbox" id="sms-only-otp" />
+            <span>仅转发识别到验证码的短信（关闭则转发所选卡的全部短信）</span>
+          </label>
+        </div>
+
+        <div class="form-grid">
+          <label class="text-field">
+            <span>发件邮箱（QQ 邮箱）</span>
+            <input type="email" id="sms-smtp-user" placeholder="例如 123456@qq.com" />
+          </label>
+          <label class="text-field">
+            <span>目标收件邮箱</span>
+            <input type="email" id="sms-to-email" placeholder="例如 123456@qq.com" />
+          </label>
+          <label class="text-field">
+            <span>SMTP 授权码 <span id="sms-pass-hint" class="muted-inline"></span></span>
+            <input type="password" id="sms-smtp-pass" placeholder="QQ 邮箱 16 位授权码（留空保留已保存）" autocomplete="new-password" />
+          </label>
+          <label class="text-field">
+            <span>SMTP 服务器 : 端口 (SSL)</span>
+            <div class="inline-pair">
+              <input type="text" id="sms-smtp-host" value="smtp.qq.com" />
+              <input type="number" id="sms-smtp-port" value="465" style="width:90px;" />
+            </div>
+          </label>
+        </div>
+
+        <div class="sub" id="sms-meta-line">累计转发：0 条</div>
+        <div class="auth-err hidden" id="sms-err-box"></div>
+
+        <div class="ctrl-actions">
+          <button class="btn" id="btn-sms-save" type="button">💾 保存配置</button>
+          <button class="btn secondary" id="btn-sms-test" type="button">✉️ 发送测试邮件</button>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-hd">
+          <h2>📬 手机收件箱（最近 20 条）</h2>
+          <span class="tag" id="sms-inbox-cnt">0 条</span>
+        </div>
+        <div class="sms-list" id="sms-inbox-list">
+          <div class="sub">暂无收件箱短信</div>
+        </div>
+      </article>
+    </section>
+
+    <article class="card">
+      <div class="card-hd">
+        <h2>📋 转发历史记录</h2>
+        <span class="tag" id="sms-hist-cnt">0 条</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>时间</th><th>接收卡</th><th>发件人</th><th>状态</th><th>详情 / 摘要</th></tr></thead>
+          <tbody id="sms-hist-body"><tr><td colspan="5" class="sub">暂无转发记录</td></tr></tbody>
+        </table>
+      </div>
+    </article>
   </main>
 
   <div class="toast" id="toast"></div>

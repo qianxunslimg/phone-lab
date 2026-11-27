@@ -578,3 +578,85 @@ pre.logbox {
 }
 
 .toast.show { opacity: 1; }
+
+.inline-pair {
+  display: flex;
+  gap: 8px;
+}
+
+.inline-pair input:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.muted-inline {
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.sim-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sms-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  max-height: 540px;
+  overflow-y: auto;
+}
+
+.sms-item {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sms-item-hd {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.sms-body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.sms-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.otp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(34, 211, 238, 0.14);
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  color: var(--cyan);
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}

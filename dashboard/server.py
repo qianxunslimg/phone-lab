@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from metrics import collect_snapshot
+import sms_forwarder
 from services import (
     control_service,
     drop_memory_caches,
@@ -165,6 +166,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_json(200 if ok else 400, {"ok": ok, "name": name, "content": content})
             return
 
+        if parsed.path == "/api/sms/status":
+            if not self.require_auth():
+                return
+            self.send_json(200, sms_forwarder.get_status())
+            return
+
         self.send_error(404)
 
     def do_POST(self):
@@ -205,13 +212,35 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_json(200 if ok else 400, {"ok": ok, "message": msg})
             return
 
+        if parsed.path == "/api/sms/config":
+            ok, msg = sms_forwarder.update_config(self.read_json_body())
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg, "status": sms_forwarder.get_status()})
+            return
+
+        if parsed.path == "/api/sms/test":
+            ok, msg = sms_forwarder.send_test_email(self.read_json_body())
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg, "status": sms_forwarder.get_status()})
+            return
+
+        if parsed.path == "/api/sms/resend":
+            data = self.read_json_body()
+            try:
+                sms_id = int(data.get("id", 0))
+            except (TypeError, ValueError):
+                self.send_json(400, {"ok": False, "message": "无效的短信 ID"})
+                return
+            ok, msg = sms_forwarder.resend_sms_by_id(sms_id)
+            self.send_json(200 if ok else 400, {"ok": ok, "message": msg, "status": sms_forwarder.get_status()})
+            return
+
         self.send_error(404)
 
 
 def main():
     threading.Thread(target=collector_loop, daemon=True).start()
+    sms_forwarder.start_watcher()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), DashboardHandler)
-    print(f"Phone Mini-Server Control Center listening on 0.0.0.0:{PORT} (idle sleep enabled)", flush=True)
+    print(f"Phone Mini-Server Control Center listening on 0.0.0.0:{PORT} (idle sleep + SMS watcher enabled)", flush=True)
     srv.serve_forever()
 
 
